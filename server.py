@@ -20,7 +20,7 @@ async def get_commands(request: Request):
     data = await request.json()
     device_id = data.get("device_id")
     
-    # Save last seen time
+    # Save the exact time the Moto checked in
     data["last_seen"] = time.time()
     device_data[device_id] = data
     
@@ -39,7 +39,6 @@ async def post_result(request: Request):
         
     if "image_b64" in data:
         latest_image_b64 = data["image_b64"]
-        print("PHOTO SAVED ON SERVER!")
         
     return {"status": "ok"}
 
@@ -58,7 +57,7 @@ async def post_wa(request: Request):
 async def get_state(request: Request):
     check_key(request)
     
-    # Remove devices that haven't checked in for 15 seconds
+    # Check if the device has checked in within the last 15 seconds
     now = time.time()
     active_devices = {}
     for dev_id, info in device_data.items():
